@@ -1,0 +1,198 @@
+* Android Reverse Engineering
+** Overview
+- Things to Know
+- APK Structure
+- Tools
+- Hacking
+- Code Injection
+** Things to Know
+- APK should be in =release= mode
+- You can download APK's from your phone to analyze
+- Need to uninstall original app if there
+** APK Structure
+- AndroidManifest.xml
+- classes.dex
+- res/
+- lib/
+- META-INF
+** Tools
+- [[https://developer.android.com/studio/index.html][Android SDK]]
+- [[https://ibotpeaches.github.io/Apktool/][apktool]]
+- [[https://docs.oracle.com/javase/7/docs/technotes/tools/windows/jarsigner.html][jarsigner]]
+- [[https://docs.oracle.com/javase/6/docs/technotes/tools/windows/keytool.html][keytool]]
+** Hacking
+1. Unzip APK and disassemble classes.dex
+2. Read Smali source code & static analysis
+3. Inject byte code into the app
+4. Reassemble classes.dex & sign APK
+*** Unzip APK and disassemble classes.dex
+**** Unpacking the APK
+We have apk by itself
+#+BEGIN_SRC sh
+ls
+#+END_SRC
+
+#+RESULTS:
+| app-release.apk |
+| output.json     |
+
+
+#+BEGIN_SRC sh
+apktool d -r app-release.apk -o app >/dev/null # Avoid output
+cd app && ls
+#+END_SRC
+
+#+RESULTS:
+| AndroidManifest.xml |
+| apktool.yml         |
+| original            |
+| res                 |
+| resources.arsc      |
+| smali               |
+
+Packages can be accessed just like normal except it's buried in the *smali* directory.
+
+Example: =com.hello.world= is =com/hello/world/= in a normal directory but is now =smali/com/hello/world/=.
+**** Taking a peek at smali directory
+#+BEGIN_SRC sh
+ls smali
+#+END_SRC
+
+#+RESULTS:
+| android |
+| com     |
+
+See only things we care about
+#+BEGIN_SRC sh
+ls smali/com/pygopar/dev831/
+#+END_SRC
+
+#+RESULTS:
+| BuildConfig.smali    |
+| MainActivity$1.smali |
+| MainActivity.smali   |
+| R$anim.smali         |
+| R$attr.smali         |
+| R$bool.smali         |
+| R$color.smali        |
+| R$dimen.smali        |
+| R$drawable.smali     |
+| R$id.smali           |
+| R$integer.smali      |
+| R$layout.smali       |
+| R$mipmap.smali       |
+| R$string.smali       |
+| R$style.smali        |
+| R$styleable.smali    |
+| R.smali              |
+
+**** Learning Smali
+#+BEGIN_SRC java
+public class StartActivity extends Activity {
+    @Override
+    protected void onCreate(
+        Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_start);
+        Log.i("Hello", “World");
+}
+#+END_SRC
+
+#+BEGIN_SRC smali
+# virtual methods
+.method protected onCreate(Landroid/os/Bundle;)V
+    .locals 3
+    .parameter "savedInstanceState"
+
+    .prologue
+    invoke-super {p0, p1}, Landroid/app/Activity;->onCreate(Landroid/os/Bundle;)V
+
+    const/high16 v0, 0x7f03
+    const-string v0, "Hello"
+    const-string v1, “World"
+
+    invoke-static {v0, v1}, Landroid/util/Log;
+        ->d(Ljava/lang/String;Ljava/lang/String;)I
+    move-result v0
+    return-void
+#+END_SRC
+
+Smali types:
+#+BEGIN_SRC
+.method private doSomething()[
+
+[ array
+V void
+Z boolean
+B byte
+S short
+C char
+F float
+I int
+J long
+D double
+
+#+END_SRC
+
+Wait we forgot about the letter *L*
+=Lcom/example/myapp/MyClass;=
+
+- Full name space
+- Prefixed with *L*
+- Suffixed with *;*
+
+Registers
+=locals= - Registers of a method without parameters
+=parameters= - Input Parameters
+
+v0 - Local parameter
+p0 - Parameter 0 (this)
+p1 - Parameter 1
+
+** Code Injection
+*** Adding a Toast
+#+BEGIN_SRC java
+Toast.makeText(getApplicationContext(), "Hacked!" , Toast.LENGTH_SHORT).show();
+#+END_SRC
+
+#+BEGIN_SRC smali
+invoke-virtual {p0}, Lcom/pygopar/dev831/MainActivity;->
+getApplicationContext()Landroid/content/Context;
+move-result-object v1
+const-string v2, "Hacked"
+const/4 v3, 0x0
+
+invoke-static {v1, v2, v3}, Landroid/widget/Toast;
+    ->makeText(Landroid/content/Context;Ljava/lang/CharSequence;I)Landroid/widget/Toast;
+move-result-object v1
+invoke-virtual {v1}, Landroid/widget/Toast;->show()V
+#+END_SRC
+
+Go to file and bake that in
+*** Rebuilding apk
+#+BEGIN_SRC sh
+apktool b app >/dev/null # Avoid output
+ls app/dist
+#+END_SRC
+
+#+RESULTS:
+: app-release.apk
+
+*** Running APK
+# Fill out prompts
+#+BEGIN_SRC sh
+keytool -genkey -v -keystore my-key.keystore -alias my_alias -keyalg RSA -validity 10000
+#+END_SRC
+
+#+BEGIN_SRC sh
+jarsigner -verbose -sigalg MD5withRSA -digestalg SHA1 -keystore my-key.keystore app-release.apk my_alias
+#+END_SRC
+
+#+BEGIN_SRC sh
+adb uninstall com.pygopar.dev831
+adb install ./app-release.apk
+#+END_SRC
+
+#+RESULTS:
+| Success |
+| Success |
